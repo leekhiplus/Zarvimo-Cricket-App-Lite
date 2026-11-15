@@ -1,0 +1,83 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Zarvimo-Live-Cricket-Streaming-Lite.zip"
+      - ".github/workflows/build-android.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK (accepts licenses)
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Extract source archive (or use repo root)
+        run: |
+          set -euo pipefail
+          if [ -f Zarvimo-Live-Cricket-Streaming-Lite.zip ]; then
+            mkdir -p "$RUNNER_TEMP/src"
+            unzip -q Zarvimo-Live-Cricket-Streaming-Lite.zip -d "$RUNNER_TEMP/src"
+            SETTINGS=$(find "$RUNNER_TEMP/src" -name settings.gradle.kts -print -quit)
+          else
+            SETTINGS=$(find . -name settings.gradle.kts -not -path './.git/*' -print -quit)
+          fi
+          [ -n "$SETTINGS" ] || { echo "settings.gradle.kts not found"; exit 1; }
+          echo "PROJECT_DIR=$(cd "$(dirname "$SETTINGS")" && pwd)" >> "$GITHUB_ENV"
+
+      - name: Run unit tests
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle --no-daemon testDebugUnitTest
+
+      - name: Build debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle --no-daemon assembleDebug
+
+      - name: Verify APK exists
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
+          ls -lh "$APK"
+          {
+            echo "### Build summary"
+            echo "- APK: \`$APK\`"
+            echo "- Size: $(du -h "$APK" | cut -f1)"
+            echo "- Unit tests: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zarvimo-debug-apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: ${{ env.PROJECT_DIR }}/app/build/reports/tests/
+          if-no-files-found: ignore
