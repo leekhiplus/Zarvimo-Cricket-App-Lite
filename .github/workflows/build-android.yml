@@ -25,8 +25,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK (accepts licenses)
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses (runner has the SDK preinstalled)
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          echo "sdk.dir=$SDK" > local.properties || true
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
